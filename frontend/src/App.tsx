@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ActiveView, ParseResult, Segment, ValidationError, ValidateResponse } from './types';
+import type { ActiveView, Segment, ValidationError, ValidateResponse } from './types';
 import { validateFile } from './api';
 import FileUpload from './components/FileUpload';
 import EdiTree from './components/EdiTree';
