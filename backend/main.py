@@ -3,6 +3,7 @@ US Healthcare EDI Parser & X12 File Validator
 FastAPI Application Entry Point
 """
 from contextlib import asynccontextmanager
+import os
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,12 +35,28 @@ app = FastAPI(
 )
 
 # ---------------------------------------------------------------------------
+# CORS config
+# ---------------------------------------------------------------------------
+def _allowed_origins() -> list[str]:
+    """
+    Build allowed frontend origins from env.
+    Set CORS_ORIGINS as comma-separated values in production.
+    Example:
+      CORS_ORIGINS=https://your-frontend.onrender.com,https://your-domain.com
+    """
+    raw = os.getenv("CORS_ORIGINS", "")
+    if raw.strip():
+        return [o.strip() for o in raw.split(",") if o.strip()]
+    return ["http://localhost:5173", "http://localhost:3000"]
+
+# ---------------------------------------------------------------------------
 # CORS – allow React dev server
 # ---------------------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
-    allow_credentials=True,
+    allow_origins=_allowed_origins(),
+    allow_origin_regex=r"https://.*\.onrender\.com",
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -72,3 +89,13 @@ app.include_router(delta_router, prefix="/api", tags=["Delta Engine"])
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "service": "edi-parser", "version": "2.0.0"}
+
+
+@app.get("/")
+async def root():
+    return {
+        "service": "edi-parser",
+        "status": "ok",
+        "health": "/health",
+        "docs": "/docs",
+    }
