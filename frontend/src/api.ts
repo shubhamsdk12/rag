@@ -1,12 +1,40 @@
 const BASE = '/api';
 
+async function readJsonOrText(res: Response): Promise<unknown> {
+  const contentType = res.headers.get('content-type')?.toLowerCase() ?? '';
+  const raw = await res.text();
+  if (!raw.trim()) return null;
+
+  if (contentType.includes('application/json')) {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return { detail: 'Server returned invalid JSON.' };
+    }
+  }
+
+  // Fallback for HTML/text responses from proxies or upstream failures.
+  return { detail: raw };
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${url}`, init);
+  const body = await readJsonOrText(res);
+
   if (!res.ok) {
-    const body = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(body.detail?.message ?? body.detail ?? res.statusText);
+    const detail = (body as { detail?: unknown } | null)?.detail;
+    const message =
+      (detail as { message?: string } | undefined)?.message ??
+      (typeof detail === 'string' ? detail : undefined) ??
+      `${res.status} ${res.statusText}`;
+    throw new Error(message);
   }
-  return res.json();
+
+  if (body === null) {
+    throw new Error('Server returned an empty response.');
+  }
+
+  return body as T;
 }
 
 function fileForm(name: string, file: File): FormData {
