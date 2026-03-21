@@ -1,37 +1,45 @@
-const BASE = '/api';
+const BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/+$/, '') || '/api';
 
-async function readJsonOrText(res: Response): Promise<unknown> {
+type ParsedBody = { kind: 'empty' | 'json' | 'text'; value: unknown };
+
+async function readBody(res: Response): Promise<ParsedBody> {
   const contentType = res.headers.get('content-type')?.toLowerCase() ?? '';
   const raw = await res.text();
-  if (!raw.trim()) return null;
+  if (!raw.trim()) return { kind: 'empty', value: null };
 
   if (contentType.includes('application/json')) {
     try {
-      return JSON.parse(raw);
+      return { kind: 'json', value: JSON.parse(raw) };
     } catch {
-      return { detail: 'Server returned invalid JSON.' };
+      return { kind: 'text', value: 'Server returned invalid JSON.' };
     }
   }
 
-  // Fallback for HTML/text responses from proxies or upstream failures.
-  return { detail: raw };
+  return { kind: 'text', value: raw };
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${url}`, init);
-  const body = await readJsonOrText(res);
+  const endpoint = `${BASE}${url}`;
+  const res = await fetch(endpoint, init);
+  const parsed = await readBody(res);
+  const body = parsed.value;
 
   if (!res.ok) {
     const detail = (body as { detail?: unknown } | null)?.detail;
     const message =
       (detail as { message?: string } | undefined)?.message ??
       (typeof detail === 'string' ? detail : undefined) ??
+      (typeof body === 'string' ? body : undefined) ??
       `${res.status} ${res.statusText}`;
     throw new Error(message);
   }
 
-  if (body === null) {
-    throw new Error('Server returned an empty response.');
+  if (parsed.kind === 'empty') {
+    throw new Error(`Empty response from ${endpoint}. Check backend route and deployment logs.`);
+  }
+
+  if (parsed.kind !== 'json') {
+    throw new Error(`Expected JSON from ${endpoint}, got ${res.headers.get('content-type') || 'unknown content-type'}.`);
   }
 
   return body as T;
