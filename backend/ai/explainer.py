@@ -12,6 +12,13 @@ from typing import Any
 from ai.retriever import retrieve_context
 from parser.models import ValidationError
 
+# Phase 2: Few-shot injection from continuous learning loop
+try:
+    from learning.injector import build_few_shot_block
+    _HAS_INJECTOR = True
+except ImportError:
+    _HAS_INJECTOR = False
+
 # ---------------------------------------------------------------------------
 # PHI Masking
 # ---------------------------------------------------------------------------
@@ -126,3 +133,35 @@ def explain_errors_batch(
 ) -> list[dict[str, Any]]:
     """Explain multiple errors in batch."""
     return [explain_error(e) for e in errors]
+
+
+async def explain_error_with_learning(
+    error: ValidationError,
+    sql_context: str = "",
+) -> dict[str, Any]:
+    """
+    Enhanced explain_error that injects few-shot examples from past
+    human decisions before generating the explanation.
+
+    Phase 2 addition — does not change the PHI masking logic.
+    """
+    # Build few-shot block from feedback DB
+    few_shot_block = ""
+    if _HAS_INJECTOR:
+        try:
+            error_code = error.code or ""
+            segment_id = error.segment_id or ""
+            few_shot_block = await build_few_shot_block(error_code, segment_id)
+        except Exception:
+            few_shot_block = ""
+
+    # Get base explanation
+    result = explain_error(error, sql_context)
+
+    # Append few-shot context if available
+    if few_shot_block:
+        result["few_shot_context"] = few_shot_block
+        # Append to plain_english for visibility
+        result["plain_english"] += f"\n\n{few_shot_block}"
+
+    return result
